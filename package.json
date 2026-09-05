@@ -1,0 +1,112 @@
+{
+  "name": "agenda-aulas-autoescola",
+  "version": "1.0.0",
+  "description": "Aplicativo de gestão de aulas práticas de autoescola com calendário, controle financeiro e relatórios",
+  "main": "out/main/index.js",
+  "author": {
+    "name": "Agenda de Aulas",
+    "email": "contato@agendaaulas.app"
+  },
+  "homepage": "https://github.com/agendaaulas/agenda-aulas-autoescola",
+  "license": "MIT",
+  "scripts": {
+    "postinstall": "electron-rebuild -f -w better-sqlite3",
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "build:linux": "electron-vite build && electron-builder --linux",
+    "build:win": "electron-vite build && electron-builder --win",
+    "build:win:portable": "electron-vite build && electron-builder --win portable",
+    "build:mac": "electron-vite build && electron-builder --mac",
+    "run:win": "electron-builder --win",
+    "run:linux": "electron-builder --linux",
+    "run:mac": "electron-builder --mac",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "start": "electron-vite preview"
+  },
+  "dependencies": {
+    "@electron-toolkit/utils": "^4.0.0",
+    "@fullcalendar/daygrid": "^6.1.15",
+    "@fullcalendar/interaction": "^6.1.15",
+    "@fullcalendar/react": "^6.1.15",
+    "@fullcalendar/timegrid": "^6.1.15",
+    "better-sqlite3": "^11.5.0",
+    "electron-updater": "^6.3.9",
+    "jspdf": "^2.5.2",
+    "jspdf-autotable": "^3.8.4",
+    "lucide-react": "^0.454.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0"
+  },
+  "devDependencies": {
+    "@electron-toolkit/preload": "^3.0.1",
+    "@electron-toolkit/tsconfig": "^1.0.1",
+    "@electron/rebuild": "^4.2.0",
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "electron": "^33.0.2",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  },
+  "build": {
+    "appId": "com.agendaaulas.app",
+    "productName": "Agenda de Aulas",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "**/*.node"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "Agenda de Aulas",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "uninstallDisplayName": "Agenda de Aulas",
+      "installerLanguages": [
+        "pt_BR"
+      ],
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Education"
+    },
+    "mac": {
+      "icon": "build/icon.icns",
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.education"
+    }
+  }
+}
