@@ -26,7 +26,7 @@ jobs:
             artifact_name: mac
 
     runs-on: ${{ matrix.os }}
-
+  
     steps:
       - name: Checkout do código
         uses: actions/checkout@v4
