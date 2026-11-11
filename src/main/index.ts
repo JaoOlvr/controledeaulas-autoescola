@@ -5,6 +5,7 @@ import { initDatabase } from './database'
 import { registerIpcHandlers } from './ipc'
 import { makeBackup } from './backup'
 import { getConfiguracoes } from './database'
+import { startHttpServer, stopHttpServer } from './server'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -71,12 +72,17 @@ app.whenReady().then(() => {
 
   initDatabase()
   registerIpcHandlers()
+  startHttpServer().catch((err) => console.error('Erro ao iniciar servidor HTTP:', err))
   createWindow()
   setupBackupAutomation()
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+app.on('will-quit', () => {
+  stopHttpServer()
 })
 
 app.on('window-all-closed', () => {

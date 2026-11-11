@@ -8,7 +8,10 @@ import type {
   Pagamento,
   PagamentoComAluno,
   HorarioFuncionamento,
-  Configuracao
+  Configuracao,
+  Usuario,
+  AuthResponse,
+  PerfilUsuario
 } from '@shared/types'
 
 const api = {
@@ -106,7 +109,29 @@ const api = {
 
   // ---- Notificações ----
   notificar: (title: string, body: string): Promise<boolean> =>
-    ipcRenderer.invoke('notify:send', { title, body })
+    ipcRenderer.invoke('notify:send', { title, body }),
+
+  // ---- Servidor Web / Conexão Remota ----
+  obterInfoServidor: (): Promise<{ port: number; ip: string; url: string; allIps: string[] }> =>
+    ipcRenderer.invoke('server:info'),
+
+  // ---- Autenticação e Usuários ----
+  login: (usuario: string, senha: string): Promise<AuthResponse> =>
+    ipcRenderer.invoke('auth:login', { usuario, senha }),
+  obterUsuarioAtual: (token: string): Promise<Usuario | null> =>
+    ipcRenderer.invoke('auth:me', token),
+  logout: (token: string): Promise<void> =>
+    ipcRenderer.invoke('auth:logout', token),
+  alterarMinhaSenha: (dados: { usuarioId: number; senhaAtual: string; novaSenha: string }): Promise<void> =>
+    ipcRenderer.invoke('auth:alterarSenha', dados),
+  listarUsuarios: (): Promise<Usuario[]> =>
+    ipcRenderer.invoke('usuarios:list'),
+  criarUsuario: (dados: { nome: string; usuario: string; senha: string; perfil: PerfilUsuario; instrutor_id?: number | null }): Promise<Usuario> =>
+    ipcRenderer.invoke('usuarios:create', dados),
+  atualizarUsuario: (id: number, dados: { nome?: string; usuario?: string; senha?: string; perfil?: PerfilUsuario; instrutor_id?: number | null; ativo?: number }): Promise<void> =>
+    ipcRenderer.invoke('usuarios:update', id, dados),
+  deletarUsuario: (id: number): Promise<void> =>
+    ipcRenderer.invoke('usuarios:delete', id)
 }
 
 contextBridge.exposeInMainWorld('api', api)

@@ -78,6 +78,24 @@ export interface HorarioFuncionamento {
   ativo: number
 }
 
+export type PerfilUsuario = 'admin' | 'instrutor'
+
+export interface Usuario {
+  id: number
+  nome: string
+  usuario: string
+  perfil: PerfilUsuario
+  instrutor_id?: number | null
+  ativo: number
+  criado_em?: string
+  instrutor_nome?: string
+}
+
+export interface AuthResponse {
+  token: string
+  usuario: Usuario
+}
+
 export interface Configuracao {
   nome_autoescola: string
   horario_padrao_inicio: string
@@ -85,4 +103,7 @@ export interface Configuracao {
   backup_automatico: boolean
   backup_intervalo_dias: number
   ultimo_backup: string | null
+  modo_agenda?: 'grade' | 'calendario'
+  grade_horarios_manha?: string
+  grade_horarios_tarde?: string
 }

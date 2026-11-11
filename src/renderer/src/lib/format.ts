@@ -15,8 +15,15 @@ export function formatDateTime(dateStr: string): string {
   return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 }
 
+function toLocalDateString(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 export function todayISO(): string {
-  return new Date().toISOString().split('T')[0]
+  return toLocalDateString(new Date())
 }
 
 export function getMonthRange(): { inicio: string; fim: string } {
@@ -24,8 +31,8 @@ export function getMonthRange(): { inicio: string; fim: string } {
   const inicio = new Date(now.getFullYear(), now.getMonth(), 1)
   const fim = new Date(now.getFullYear(), now.getMonth() + 1, 0)
   return {
-    inicio: inicio.toISOString().split('T')[0],
-    fim: fim.toISOString().split('T')[0]
+    inicio: toLocalDateString(inicio),
+    fim: toLocalDateString(fim)
   }
 }
 

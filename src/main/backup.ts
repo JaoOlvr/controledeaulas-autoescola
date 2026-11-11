@@ -1,13 +1,13 @@
-import { app, dialog } from 'electron'
 import { copyFileSync, mkdirSync, readdirSync, existsSync, statSync } from 'fs'
 import { join } from 'path'
+import { getUserDataPath } from './database'
 
 function getDataDir(): string {
-  return join(app.getPath('userData'), 'data')
+  return join(getUserDataPath(), 'data')
 }
 
 function getBackupDir(): string {
-  const dir = join(app.getPath('userData'), 'backups')
+  const dir = join(getUserDataPath(), 'backups')
   mkdirSync(dir, { recursive: true })
   return dir
 }
@@ -42,19 +42,25 @@ function cleanupOldBackups(dir: string, keep = 20): void {
 }
 
 export async function backupToLocation(): Promise<string | null> {
-  const result = await dialog.showSaveDialog({
-    title: 'Salvar backup',
-    defaultPath: `backup-agenda-${new Date().toISOString().split('T')[0]}.db`,
-    filters: [{ name: 'Banco de dados', extensions: ['db'] }]
-  })
+  try {
+    const { dialog } = require('electron')
+    if (dialog && typeof dialog.showSaveDialog === 'function') {
+      const result = await dialog.showSaveDialog({
+        title: 'Salvar backup',
+        defaultPath: `backup-agenda-${new Date().toISOString().split('T')[0]}.db`,
+        filters: [{ name: 'Banco de dados', extensions: ['db'] }]
+      })
 
-  if (result.canceled || !result.filePath) {
-    return null
-  }
+      if (result.canceled || !result.filePath) {
+        return null
+      }
 
-  const srcDb = join(getDataDir(), 'agenda.db')
-  copyFileSync(srcDb, result.filePath)
-  return result.filePath
+      const srcDb = join(getDataDir(), 'agenda.db')
+      copyFileSync(srcDb, result.filePath)
+      return result.filePath
+    }
+  } catch {}
+  return null
 }
 
 export function listBackups(): { arquivo: string; tamanho: number; data: string }[] {

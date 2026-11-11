@@ -13,12 +13,16 @@ import {
   ChevronRight,
   Maximize2,
   FileText,
-  Loader2
+  Loader2,
+  BookOpen,
+  CalendarDays
 } from 'lucide-react'
 import Modal from '../components/Modal'
 import Button from '../components/Button'
 import { Field } from '../components/Fields'
-import type { Aluno, Aula, Instrutor, Veiculo } from '@shared/types'
+import GradeHorariosView from '../components/GradeHorariosView'
+import type { Aluno, Aula, Instrutor, Veiculo, Configuracao } from '@shared/types'
+import { useAuth } from '../contexts/AuthContext'
 import { todayISO } from '../lib/format'
 import { gerarRelatorioAulas } from '../lib/pdf'
 
@@ -34,6 +38,7 @@ interface AulaComNomes extends Aula {
 }
 
 function CalendarioPage(): JSX.Element {
+  const { usuario } = useAuth()
   const [aulas, setAulas] = useState<AulaComNomes[]>([])
   const [alunos, setAlunos] = useState<Aluno[]>([])
   const [instrutores, setInstrutores] = useState<Instrutor[]>([])
@@ -46,6 +51,9 @@ function CalendarioPage(): JSX.Element {
   const [erro, setErro] = useState('')
   const [diaSelecionado, setDiaSelecionado] = useState<string | null>(null)
   const [vistaAtual, setVistaAtual] = useState<string>('dayGridMonth')
+  const [config, setConfig] = useState<Configuracao | null>(null)
+  const [modoVisualizacao, setModoVisualizacao] = useState<'grade' | 'calendario'>('grade')
+  const [diaGrade, setDiaGrade] = useState<string>(todayISO())
 
   const [form, setForm] = useState({
     aluno_id: '',
@@ -53,23 +61,28 @@ function CalendarioPage(): JSX.Element {
     veiculo_id: '',
     data: todayISO(),
     hora_inicio: '08:00',
-    hora_fim: '09:00',
+    hora_fim: '08:50',
     tipo: 'Prática',
     observacoes: ''
   })
 
   const loadDados = useCallback(async () => {
     try {
-      const [aulasData, alunosData, instrutoresData, veiculosData] = await Promise.all([
+      const [aulasData, alunosData, instrutoresData, veiculosData, cfg] = await Promise.all([
         window.api.listarAulas(),
         window.api.listarAlunos({ status: 'ativo' }),
         window.api.listarInstrutores({ status: 'ativo' }),
-        window.api.listarVeiculos({ status: 'ativo' })
+        window.api.listarVeiculos({ status: 'ativo' }),
+        window.api.obterConfiguracoes()
       ])
       setAulas(aulasData as AulaComNomes[])
       setAlunos(alunosData)
       setInstrutores(instrutoresData)
       setVeiculos(veiculosData)
+      setConfig(cfg)
+      if (cfg?.modo_agenda) {
+        setModoVisualizacao(cfg.modo_agenda)
+      }
     } catch (error) {
       console.error('Erro ao carregar dados:', error)
     } finally {
@@ -132,7 +145,7 @@ function CalendarioPage(): JSX.Element {
     setErro('')
     setForm({
       aluno_id: '',
-      instrutor_id: '',
+      instrutor_id: usuario?.instrutor_id ? String(usuario.instrutor_id) : (instrutores[0] ? String(instrutores[0].id) : ''),
       veiculo_id: veiculos[0] ? String(veiculos[0].id) : '',
       data: todayISO(),
       hora_inicio: '08:00',
@@ -219,6 +232,47 @@ function CalendarioPage(): JSX.Element {
     }
   }
 
+  function trocarModo(modo: 'grade' | 'calendario'): void {
+    setModoVisualizacao(modo)
+    window.api.atualizarConfiguracoes({ modo_agenda: modo }).catch(console.error)
+  }
+
+  function handleAgendarSlot(dia: string, horaInicio: string, horaFim: string): void {
+    setErro('')
+    setForm({
+      aluno_id: alunos[0] ? String(alunos[0].id) : '',
+      instrutor_id: usuario?.instrutor_id ? String(usuario.instrutor_id) : (instrutores[0] ? String(instrutores[0].id) : ''),
+      veiculo_id: veiculos[0] ? String(veiculos[0].id) : '',
+      data: dia,
+      hora_inicio: horaInicio,
+      hora_fim: horaFim,
+      tipo: 'Prática',
+      observacoes: ''
+    })
+    setEditandoId(null)
+    setModalOpen(true)
+  }
+
+  async function handleToggleRealizada(aula: AulaComNomes): Promise<void> {
+    const novoStatus = aula.status === 'realizada' ? 'agendada' : 'realizada'
+    try {
+      await window.api.atualizarAula(aula.id, { status: novoStatus })
+      await loadDados()
+      if (novoStatus === 'realizada') {
+        window.api.notificar('Aula Concluída', `Aula de ${aula.aluno_nome} marcada como realizada!`)
+      }
+    } catch (error) {
+      console.error('Erro ao alternar status da aula:', error)
+    }
+  }
+
+  async function handleExcluirAula(id: number): Promise<void> {
+    if (confirm('Deseja excluir esta aula?')) {
+      await window.api.deletarAula(id)
+      await loadDados()
+    }
+  }
+
   async function handleDelete(): Promise<void> {
     if (!modalDetalhes) return
     if (confirm('Excluir esta aula?')) {
@@ -281,34 +335,91 @@ function CalendarioPage(): JSX.Element {
     <div>
       <div className="page-header">
         <div>
-          <h1>Calendário</h1>
-          <p>Agende e gerencie suas aulas</p>
+          <h1>{modoVisualizacao === 'grade' ? 'Agenda de Aulas' : 'Calendário'}</h1>
+          <p>
+            {modoVisualizacao === 'grade'
+              ? 'Grade de horários da autoescola (estilo caderno)'
+              : 'Visão de calendário mensal e semanal'}
+          </p>
         </div>
+
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <Button variant="secondary" onClick={prevMonth}>
-            <ChevronLeft size={16} />
-          </Button>
-          <Button variant="secondary" onClick={goToday}>
-            Hoje
-          </Button>
-          <Button variant="secondary" onClick={nextMonth}>
-            <ChevronRight size={16} />
-          </Button>
-          {vistaAtual !== 'dayGridMonth' && (
-            <Button variant="secondary" onClick={voltaMes}>
-              Mês
-            </Button>
+          {/* Alternador de Modo de Visualização */}
+          <div style={{ display: 'flex', background: 'var(--gray-200)', borderRadius: 8, padding: 3 }}>
+            <button
+              type="button"
+              onClick={() => trocarModo('grade')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                border: 'none',
+                padding: '6px 12px',
+                borderRadius: 6,
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+                background: modoVisualizacao === 'grade' ? 'white' : 'transparent',
+                color: modoVisualizacao === 'grade' ? 'var(--primary)' : 'var(--gray-600)',
+                boxShadow: modoVisualizacao === 'grade' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+              }}
+            >
+              <BookOpen size={15} />
+              Grade (Caderno)
+            </button>
+            <button
+              type="button"
+              onClick={() => trocarModo('calendario')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                border: 'none',
+                padding: '6px 12px',
+                borderRadius: 6,
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+                background: modoVisualizacao === 'calendario' ? 'white' : 'transparent',
+                color: modoVisualizacao === 'calendario' ? 'var(--primary)' : 'var(--gray-600)',
+                boxShadow: modoVisualizacao === 'calendario' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+              }}
+            >
+              <CalendarDays size={15} />
+              Calendário
+            </button>
+          </div>
+
+          {modoVisualizacao === 'calendario' && (
+            <>
+              <Button variant="secondary" onClick={prevMonth}>
+                <ChevronLeft size={16} />
+              </Button>
+              <Button variant="secondary" onClick={goToday}>
+                Hoje
+              </Button>
+              <Button variant="secondary" onClick={nextMonth}>
+                <ChevronRight size={16} />
+              </Button>
+              {vistaAtual !== 'dayGridMonth' && (
+                <Button variant="secondary" onClick={voltaMes}>
+                  Mês
+                </Button>
+              )}
+              {vistaAtual === 'dayGridMonth' && (
+                <Button variant="secondary" onClick={() => expandirDia()} disabled={!diaSelecionado}>
+                  <Maximize2 size={16} />
+                  Expandir Dia{diaSelecionado ? ` (${formatDiaCurto(diaSelecionado)})` : ''}
+                </Button>
+              )}
+            </>
           )}
-          {vistaAtual === 'dayGridMonth' && (
-            <Button variant="secondary" onClick={() => expandirDia()} disabled={!diaSelecionado}>
-              <Maximize2 size={16} />
-              Expandir Dia{diaSelecionado ? ` (${formatDiaCurto(diaSelecionado)})` : ''}
-            </Button>
-          )}
+
           <Button variant="secondary" onClick={gerarAgendaPdf} disabled={gerandoPdf}>
             {gerandoPdf ? <Loader2 size={16} className="spin" /> : <FileText size={16} />}
             {gerandoPdf ? 'Gerando...' : 'PDF'}
           </Button>
+
           <Button onClick={openNovoAula}>
             <Plus size={16} />
             Nova Aula
@@ -318,6 +429,21 @@ function CalendarioPage(): JSX.Element {
 
       {loading ? (
         <div className="empty-state">Carregando...</div>
+      ) : modoVisualizacao === 'grade' ? (
+        <GradeHorariosView
+          aulas={aulas}
+          alunos={alunos}
+          instrutores={instrutores}
+          veiculos={veiculos}
+          config={config}
+          diaAtual={diaGrade}
+          instrutorPadraoId={usuario?.perfil === 'instrutor' ? usuario.instrutor_id : null}
+          onDiaChange={setDiaGrade}
+          onAgendarSlot={handleAgendarSlot}
+          onEditarAula={openEditar}
+          onToggleRealizada={handleToggleRealizada}
+          onExcluirAula={handleExcluirAula}
+        />
       ) : (
         <FullCalendar
           ref={calendarRef}
@@ -440,9 +566,37 @@ function CalendarioPage(): JSX.Element {
               <textarea
                 value={form.observacoes}
                 onChange={(e) => setForm({ ...form, observacoes: e.target.value })}
-                placeholder="Notas sobre a aula..."
+                placeholder="Notas sobre a aula (ex: 1/2, (pg), baliza, dentista...)"
+                rows={2}
               />
             </Field>
+            {/* Atalhos rápidos para observações estilo caderno */}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+              {['(pg)', '1ª Aula', '2ª Aula', '1/2', '2/5', 'Baliza', 'Simulado', 'Combustível', 'Dentista'].map((tag) => (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() =>
+                    setForm((prev) => ({
+                      ...prev,
+                      observacoes: prev.observacoes ? `${prev.observacoes} ${tag}` : tag
+                    }))
+                  }
+                  style={{
+                    padding: '3px 8px',
+                    borderRadius: 4,
+                    border: '1px solid var(--gray-300)',
+                    background: 'var(--gray-100)',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    color: 'var(--gray-700)'
+                  }}
+                >
+                  + {tag}
+                </button>
+              ))}
+            </div>
           </div>
           {alunoSelecionado && (
             <div className="full">

@@ -28,9 +28,18 @@ import {
   updateHorario,
   getConfiguracoes,
   updateConfiguracoes,
-  totalGastosPeriodo
+  totalGastosPeriodo,
+  autenticarUsuario,
+  validarSessao,
+  encerrarSessao,
+  listUsuarios,
+  createUsuario,
+  updateUsuario,
+  deleteUsuario,
+  alterarMinhaSenha
 } from './database'
 import { makeBackup, backupToLocation, listBackups, exportAsJson } from './backup'
+import { getServerInfo } from './server'
 
 export function registerIpcHandlers(): void {
   // ---- Instrutores ----
@@ -93,4 +102,19 @@ export function registerIpcHandlers(): void {
     }
     return true
   })
+
+  // ---- Servidor Web Local (Tablet) ----
+  ipcMain.handle('server:info', () => getServerInfo())
+
+  // ---- Autenticação e Usuários ----
+  ipcMain.handle('auth:login', (_e, { usuario, senha }) => autenticarUsuario(usuario, senha))
+  ipcMain.handle('auth:me', (_e, token) => validarSessao(token))
+  ipcMain.handle('auth:logout', (_e, token) => encerrarSessao(token))
+  ipcMain.handle('auth:alterarSenha', (_e, { usuarioId, senhaAtual, novaSenha }) =>
+    alterarMinhaSenha(usuarioId, senhaAtual, novaSenha)
+  )
+  ipcMain.handle('usuarios:list', () => listUsuarios())
+  ipcMain.handle('usuarios:create', (_e, dados) => createUsuario(dados))
+  ipcMain.handle('usuarios:update', (_e, id, dados) => updateUsuario(id, dados))
+  ipcMain.handle('usuarios:delete', (_e, id) => deleteUsuario(id))
 }

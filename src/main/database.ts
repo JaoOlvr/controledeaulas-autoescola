@@ -1,13 +1,59 @@
-import { app } from 'electron'
 import Database from 'better-sqlite3'
 import { join } from 'path'
-import { mkdirSync } from 'fs'
-import type { Instrutor, Veiculo, Aluno, Aula, Gasto, Pagamento, PagamentoComAluno, HorarioFuncionamento, Configuracao } from '@shared/types'
+import { mkdirSync, existsSync } from 'fs'
+import os from 'os'
+import crypto from 'crypto'
+import type {
+  Instrutor,
+  Veiculo,
+  Aluno,
+  Aula,
+  Gasto,
+  Pagamento,
+  PagamentoComAluno,
+  HorarioFuncionamento,
+  Configuracao,
+  Usuario,
+  AuthResponse,
+  PerfilUsuario
+} from '@shared/types'
 
 let db: Database.Database
 
+export function getUserDataPath(): string {
+  // Suporte a volume persistente na nuvem ou Docker (ex: DATA_DIR=/data)
+  if (process.env.DATA_DIR) {
+    return process.env.DATA_DIR
+  }
+
+  try {
+    // Se estiver rodando dentro do Electron
+    const { app } = require('electron')
+    if (app && typeof app.getPath === 'function') {
+      if (app.name === 'Electron' || !app.name) {
+        app.setName('agenda-aulas-autoescola')
+      }
+      return app.getPath('userData')
+    }
+  } catch {}
+
+  // Se estiver rodando como servidor Node puro, usa a mesma pasta do Electron
+  const home = os.homedir()
+  const electronConfig =
+    process.platform === 'linux'
+      ? join(home, '.config', 'agenda-aulas-autoescola')
+      : process.platform === 'win32'
+        ? join(process.env.APPDATA || home, 'agenda-aulas-autoescola')
+        : join(home, 'Library', 'Application Support', 'agenda-aulas-autoescola')
+
+  if (existsSync(electronConfig)) {
+    return electronConfig
+  }
+  return join(process.cwd(), 'data')
+}
+
 export function initDatabase(): void {
-  const userDataPath = app.getPath('userData')
+  const userDataPath = getUserDataPath()
   const dataDir = join(userDataPath, 'data')
   mkdirSync(dataDir, { recursive: true })
 
@@ -18,6 +64,7 @@ export function initDatabase(): void {
   createTables()
   migrateSchema()
   seedInitialData()
+  sincronizarPagamentosIniciais()
 }
 
 function createTables(): void {
@@ -103,6 +150,26 @@ function createTables(): void {
       chave TEXT PRIMARY KEY,
       valor TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS usuarios (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nome TEXT NOT NULL,
+      usuario TEXT UNIQUE NOT NULL,
+      senha_hash TEXT NOT NULL,
+      perfil TEXT NOT NULL DEFAULT 'instrutor',
+      instrutor_id INTEGER,
+      ativo INTEGER DEFAULT 1,
+      criado_em TEXT DEFAULT (datetime('now', 'localtime')),
+      FOREIGN KEY (instrutor_id) REFERENCES instrutores(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS sessoes (
+      token TEXT PRIMARY KEY,
+      usuario_id INTEGER NOT NULL,
+      expira_em TEXT NOT NULL,
+      criado_em TEXT DEFAULT (datetime('now', 'localtime')),
+      FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE
+    );
   `)
 }
 
@@ -153,6 +220,46 @@ function seedInitialData(): void {
     insert.run('duracao_padrao_minutos', '60')
     insert.run('backup_automatico', 'true')
     insert.run('backup_intervalo_dias', '7')
+  }
+
+  const userCount = db.prepare('SELECT COUNT(*) as count FROM usuarios').get() as { count: number }
+  if (userCount.count === 0) {
+    const insert = db.prepare(
+      'INSERT INTO usuarios (nome, usuario, senha_hash, perfil, ativo) VALUES (?, ?, ?, ?, 1)'
+    )
+    insert.run('Administrador', 'admin', hashPassword('admin'), 'admin')
+  }
+}
+
+function sincronizarPagamentosIniciais(): void {
+  // Encontra alunos cujo orcamento_pago é maior que o total já registrado na tabela pagamentos
+  const alunosIncompletos = db.prepare(`
+    SELECT a.id, a.nome, a.orcamento_pago, a.criado_em,
+           COALESCE(SUM(p.valor), 0) as total_pago_registrado
+    FROM alunos a
+    LEFT JOIN pagamentos p ON a.id = p.aluno_id
+    GROUP BY a.id
+    HAVING a.orcamento_pago > total_pago_registrado
+  `).all() as { id: number; nome: string; orcamento_pago: number; criado_em: string; total_pago_registrado: number }[]
+
+  const insertPagamento = db.prepare(`
+    INSERT INTO pagamentos (aluno_id, valor, data, metodo, observacoes)
+    VALUES (?, ?, ?, ?, ?)
+  `)
+
+  for (const aluno of alunosIncompletos) {
+    const diferenca = aluno.orcamento_pago - aluno.total_pago_registrado
+    if (diferenca > 0) {
+      const dataPagamento = aluno.criado_em ? aluno.criado_em.split(' ')[0] : new Date().toISOString().split('T')[0]
+      insertPagamento.run(
+        aluno.id,
+        diferenca,
+        dataPagamento,
+        'Adiantamento',
+        'Pagamento adiantado no cadastro do aluno'
+      )
+      console.log(`[Financeiro] Pagamento retroativo de R$ ${diferenca.toFixed(2)} registrado para ${aluno.nome}`)
+    }
   }
 }
 
@@ -263,6 +370,8 @@ export function listAlunos(filtro?: { status?: string; busca?: string }): Aluno[
 }
 
 export function createAluno(aluno: Omit<Aluno, 'id' | 'criado_em' | 'status'> & { status?: string }): Aluno {
+  const valorPago = Number(aluno.orcamento_pago) || 0
+
   const result = db
     .prepare(
       'INSERT INTO alunos (nome, telefone, cpf, categoria, orcamento_total, orcamento_pago, status) VALUES (?, ?, ?, ?, ?, ?, ?)'
@@ -273,10 +382,27 @@ export function createAluno(aluno: Omit<Aluno, 'id' | 'criado_em' | 'status'> & 
       aluno.cpf,
       aluno.categoria,
       aluno.orcamento_total,
-      aluno.orcamento_pago ?? 0,
+      valorPago,
       aluno.status ?? 'ativo'
     )
-  return getAluno(Number(result.lastInsertRowid))!
+
+  const novoAlunoId = Number(result.lastInsertRowid)
+
+  // Se o aluno pagou valor adiantado no cadastro, registra automaticamente na tabela de pagamentos
+  if (valorPago > 0) {
+    const hoje = new Date().toISOString().split('T')[0]
+    db.prepare(
+      'INSERT INTO pagamentos (aluno_id, valor, data, metodo, observacoes) VALUES (?, ?, ?, ?, ?)'
+    ).run(
+      novoAlunoId,
+      valorPago,
+      hoje,
+      'Adiantamento',
+      'Pagamento adiantado no cadastro do aluno'
+    )
+  }
+
+  return getAluno(novoAlunoId)!
 }
 
 export function getAluno(id: number): Aluno | undefined {
@@ -288,6 +414,24 @@ export function getAluno(id: number): Aluno | undefined {
 export function updateAluno(id: number, aluno: Partial<Aluno>): void {
   const current = getAluno(id)
   if (!current) return
+
+  const novoPago = aluno.orcamento_pago !== undefined ? Number(aluno.orcamento_pago) : current.orcamento_pago
+  const diferenca = novoPago - current.orcamento_pago
+
+  // Se o valor pago foi aumentado na edição do aluno, registra a diferença em pagamentos
+  if (diferenca > 0) {
+    const hoje = new Date().toISOString().split('T')[0]
+    db.prepare(
+      'INSERT INTO pagamentos (aluno_id, valor, data, metodo, observacoes) VALUES (?, ?, ?, ?, ?)'
+    ).run(
+      id,
+      diferenca,
+      hoje,
+      'Adiantamento',
+      'Acréscimo de pagamento na edição do aluno'
+    )
+  }
+
   db.prepare(
     'UPDATE alunos SET nome = ?, telefone = ?, cpf = ?, categoria = ?, orcamento_total = ?, orcamento_pago = ?, status = ? WHERE id = ?'
   ).run(
@@ -296,7 +440,7 @@ export function updateAluno(id: number, aluno: Partial<Aluno>): void {
     aluno.cpf ?? current.cpf,
     aluno.categoria ?? current.categoria,
     aluno.orcamento_total ?? current.orcamento_total,
-    aluno.orcamento_pago ?? current.orcamento_pago,
+    novoPago,
     aluno.status ?? current.status,
     id
   )
@@ -586,10 +730,13 @@ export function getConfiguracoes(): Configuracao {
   return {
     nome_autoescola: config['nome_autoescola'] ?? 'Autoescola',
     horario_padrao_inicio: config['horario_padrao_inicio'] ?? '08:00',
-    duracao_padrao_minutos: Number(config['duracao_padrao_minutos'] ?? 60),
+    duracao_padrao_minutos: Number(config['duracao_padrao_minutos'] ?? 50),
     backup_automatico: config['backup_automatico'] === 'true',
     backup_intervalo_dias: Number(config['backup_intervalo_dias'] ?? 7),
-    ultimo_backup: config['ultimo_backup'] ?? null
+    ultimo_backup: config['ultimo_backup'] ?? null,
+    modo_agenda: (config['modo_agenda'] as 'grade' | 'calendario') ?? 'grade',
+    grade_horarios_manha: config['grade_horarios_manha'] ?? '08:00, 08:50, 09:40, 10:30, 11:20',
+    grade_horarios_tarde: config['grade_horarios_tarde'] ?? '14:00, 14:50, 15:40, 16:30, 17:20'
   }
 }
 
@@ -610,4 +757,184 @@ export function updateConfiguracoes(config: Partial<Configuracao>): void {
   if (config.backup_automatico !== undefined) set('backup_automatico', String(config.backup_automatico))
   if (config.backup_intervalo_dias !== undefined) set('backup_intervalo_dias', String(config.backup_intervalo_dias))
   if (config.ultimo_backup !== undefined && config.ultimo_backup !== null) set('ultimo_backup', config.ultimo_backup)
+  if (config.modo_agenda !== undefined) set('modo_agenda', config.modo_agenda)
+  if (config.grade_horarios_manha !== undefined) set('grade_horarios_manha', config.grade_horarios_manha)
+  if (config.grade_horarios_tarde !== undefined) set('grade_horarios_tarde', config.grade_horarios_tarde)
+}
+
+// ---- AUTENTICAÇÃO E USUÁRIOS ----
+
+export function hashPassword(password: string): string {
+  const salt = crypto.randomBytes(16).toString('hex')
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex')
+  return `${salt}:${hash}`
+}
+
+export function verifyPassword(password: string, storedHash: string): boolean {
+  try {
+    const [salt, key] = storedHash.split(':')
+    if (!salt || !key) return false
+    const keyBuffer = Buffer.from(key, 'hex')
+    const derivedKey = crypto.scryptSync(password, salt, 64)
+    return crypto.timingSafeEqual(keyBuffer, derivedKey)
+  } catch {
+    return false
+  }
+}
+
+export function autenticarUsuario(usuarioOuEmail: string, senha: string): AuthResponse {
+  const user = db.prepare(`
+    SELECT u.*, i.nome as instrutor_nome
+    FROM usuarios u
+    LEFT JOIN instrutores i ON u.instrutor_id = i.id
+    WHERE LOWER(u.usuario) = LOWER(?) AND u.ativo = 1
+  `).get(usuarioOuEmail.trim()) as any
+
+  if (!user || !verifyPassword(senha, user.senha_hash)) {
+    throw new Error('Usuário ou senha incorretos')
+  }
+
+  const token = crypto.randomBytes(32).toString('hex')
+  // Sessão expira em 30 dias
+  const expiraEm = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+  db.prepare('INSERT INTO sessoes (token, usuario_id, expira_em) VALUES (?, ?, ?)').run(
+    token,
+    user.id,
+    expiraEm
+  )
+
+  const usuarioObj: Usuario = {
+    id: user.id,
+    nome: user.nome,
+    usuario: user.usuario,
+    perfil: user.perfil,
+    instrutor_id: user.instrutor_id,
+    ativo: user.ativo,
+    criado_em: user.criado_em,
+    instrutor_nome: user.instrutor_nome
+  }
+
+  return { token, usuario: usuarioObj }
+}
+
+export function validarSessao(token: string): Usuario | null {
+  if (!token) return null
+  const sessao = db.prepare(`
+    SELECT u.id, u.nome, u.usuario, u.perfil, u.instrutor_id, u.ativo, u.criado_em, i.nome as instrutor_nome
+    FROM sessoes s
+    JOIN usuarios u ON s.usuario_id = u.id
+    LEFT JOIN instrutores i ON u.instrutor_id = i.id
+    WHERE s.token = ? AND u.ativo = 1 AND s.expira_em > datetime('now', 'localtime')
+  `).get(token) as any
+
+  return sessao || null
+}
+
+export function encerrarSessao(token: string): void {
+  db.prepare('DELETE FROM sessoes WHERE token = ?').run(token)
+}
+
+export function listUsuarios(): Usuario[] {
+  return db.prepare(`
+    SELECT u.id, u.nome, u.usuario, u.perfil, u.instrutor_id, u.ativo, u.criado_em, i.nome as instrutor_nome
+    FROM usuarios u
+    LEFT JOIN instrutores i ON u.instrutor_id = i.id
+    ORDER BY u.nome ASC
+  `).all() as Usuario[]
+}
+
+export function createUsuario(dados: {
+  nome: string
+  usuario: string
+  senha: string
+  perfil: PerfilUsuario
+  instrutor_id?: number | null
+}): Usuario {
+  const existente = db.prepare('SELECT id FROM usuarios WHERE LOWER(usuario) = LOWER(?)').get(dados.usuario.trim())
+  if (existente) {
+    throw new Error('Já existe um usuário cadastrado com este nome de acesso.')
+  }
+
+  const senhaHash = hashPassword(dados.senha)
+  const stmt = db.prepare(`
+    INSERT INTO usuarios (nome, usuario, senha_hash, perfil, instrutor_id, ativo)
+    VALUES (?, ?, ?, ?, ?, 1)
+  `)
+  const result = stmt.run(
+    dados.nome.trim(),
+    dados.usuario.trim().toLowerCase(),
+    senhaHash,
+    dados.perfil,
+    dados.instrutor_id || null
+  )
+
+  return db.prepare(`
+    SELECT u.id, u.nome, u.usuario, u.perfil, u.instrutor_id, u.ativo, u.criado_em, i.nome as instrutor_nome
+    FROM usuarios u
+    LEFT JOIN instrutores i ON u.instrutor_id = i.id
+    WHERE u.id = ?
+  `).get(result.lastInsertRowid) as Usuario
+}
+
+export function updateUsuario(
+  id: number,
+  dados: {
+    nome?: string
+    usuario?: string
+    senha?: string
+    perfil?: PerfilUsuario
+    instrutor_id?: number | null
+    ativo?: number
+  }
+): void {
+  if (dados.usuario !== undefined) {
+    const outro = db.prepare('SELECT id FROM usuarios WHERE LOWER(usuario) = LOWER(?) AND id != ?').get(
+      dados.usuario.trim(),
+      id
+    )
+    if (outro) {
+      throw new Error('Este nome de usuário já está em uso por outra conta.')
+    }
+    db.prepare('UPDATE usuarios SET usuario = ? WHERE id = ?').run(dados.usuario.trim().toLowerCase(), id)
+  }
+  if (dados.senha) {
+    const senhaHash = hashPassword(dados.senha)
+    db.prepare('UPDATE usuarios SET senha_hash = ? WHERE id = ?').run(senhaHash, id)
+  }
+  if (dados.nome !== undefined) {
+    db.prepare('UPDATE usuarios SET nome = ? WHERE id = ?').run(dados.nome.trim(), id)
+  }
+  if (dados.perfil !== undefined) {
+    db.prepare('UPDATE usuarios SET perfil = ? WHERE id = ?').run(dados.perfil, id)
+  }
+  if (dados.instrutor_id !== undefined) {
+    db.prepare('UPDATE usuarios SET instrutor_id = ? WHERE id = ?').run(dados.instrutor_id || null, id)
+  }
+  if (dados.ativo !== undefined) {
+    db.prepare('UPDATE usuarios SET ativo = ? WHERE id = ?').run(dados.ativo, id)
+  }
+}
+
+export function deleteUsuario(id: number): void {
+  const user = db.prepare('SELECT perfil FROM usuarios WHERE id = ?').get(id) as { perfil: string } | undefined
+  if (user?.perfil === 'admin') {
+    const adminCount = db.prepare("SELECT COUNT(*) as count FROM usuarios WHERE perfil = 'admin' AND ativo = 1").get() as { count: number }
+    if (adminCount.count <= 1) {
+      throw new Error('Não é possível excluir o único administrador do sistema.')
+    }
+  }
+  db.prepare('DELETE FROM sessoes WHERE usuario_id = ?').run(id)
+  db.prepare('DELETE FROM usuarios WHERE id = ?').run(id)
+}
+
+export function alterarMinhaSenha(usuarioId: number, senhaAtual: string, novaSenha: string): void {
+  const user = db.prepare('SELECT senha_hash FROM usuarios WHERE id = ?').get(usuarioId) as { senha_hash: string } | undefined
+  if (!user || !verifyPassword(senhaAtual, user.senha_hash)) {
+    throw new Error('A senha atual está incorreta.')
+  }
+  if (novaSenha.length < 4) {
+    throw new Error('A nova senha deve ter no mínimo 4 caracteres.')
+  }
+  const novoHash = hashPassword(novaSenha)
+  db.prepare('UPDATE usuarios SET senha_hash = ? WHERE id = ?').run(novoHash, usuarioId)
 }
