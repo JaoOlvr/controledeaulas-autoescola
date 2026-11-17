@@ -3,3 +3,9 @@ out/
 dist/
 *.log
 .DS_Store
+data/
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.local

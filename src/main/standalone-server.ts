@@ -12,8 +12,8 @@ async function bootstrap(): Promise<void> {
     // Executando em ambiente Node puro (Docker, VPS ou Nuvem)
   }
 
-  console.log('Iniciando banco de dados SQLite...')
-  initDatabase()
+  console.log('Iniciando banco de dados SQLite / Turso...')
+  await initDatabase()
 
   const port = Number(process.env.PORT) || 3333
   await startHttpServer(port)
@@ -23,5 +23,3 @@ bootstrap().catch((err) => {
   console.error('Falha crítica ao iniciar servidor:', err)
   process.exit(1)
 })
-
-

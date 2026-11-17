@@ -1,4 +1,5 @@
 import type {
+  Autoescola,
   Instrutor,
   Veiculo,
   Aluno,
@@ -10,7 +11,8 @@ import type {
   Configuracao,
   Usuario,
   AuthResponse,
-  PerfilUsuario
+  PerfilUsuario,
+  ResumoSaaS
 } from '@shared/types'
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -136,7 +138,12 @@ export function createWebApiClient() {
       return request<Aula[]>(`/api/aulas${q}`)
     },
     criarAula: (
-      aula: Partial<Aula> & { aluno_id: number; data: string; hora_inicio: string; hora_fim: string }
+      aula: Partial<Aula> & {
+        aluno_id: number
+        data: string
+        hora_inicio: string
+        hora_fim: string
+      }
     ): Promise<Aula> =>
       request<Aula>('/api/aulas', {
         method: 'POST',
@@ -175,7 +182,7 @@ export function createWebApiClient() {
         `/api/gastos/total?inicio=${encodeURIComponent(inicio)}&fim=${encodeURIComponent(fim)}`
       ),
 
-    // ---- Relatórios ----
+    // ---- Relatórios / Financeiro ----
     resumoFinanceiro: (
       inicio: string,
       fim: string
@@ -272,7 +279,33 @@ export function createWebApiClient() {
         body: JSON.stringify(dados)
       }),
     deletarUsuario: (id: number): Promise<void> =>
-      request<void>(`/api/usuarios/${id}`, { method: 'DELETE' })
+      request<void>(`/api/usuarios/${id}`, { method: 'DELETE' }),
+
+    // ---- Master SaaS (SuperAdmin) ----
+    obterResumoSaaS: (): Promise<ResumoSaaS> => request<ResumoSaaS>('/api/master/resumo'),
+    listarAutoescolas: (): Promise<Autoescola[]> => request<Autoescola[]>('/api/master/autoescolas'),
+    criarAutoescola: (dados: {
+      nome: string
+      responsavel?: string
+      telefone?: string
+      email?: string
+      status?: 'ativa' | 'bloqueada' | 'teste'
+      plano_valor?: number
+      data_vencimento?: string
+      pix_chave?: string
+      usuario_admin?: string
+      senha_admin?: string
+    }): Promise<Autoescola> =>
+      request<Autoescola>('/api/master/autoescolas', {
+        method: 'POST',
+        body: JSON.stringify(dados)
+      }),
+    atualizarAutoescola: (id: number, dados: Partial<Autoescola>): Promise<void> =>
+      request<void>(`/api/master/autoescolas/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(dados)
+      }),
+    deletarAutoescola: (id: number): Promise<void> =>
+      request<void>(`/api/master/autoescolas/${id}`, { method: 'DELETE' })
   }
 }
-

@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
+  Autoescola,
   Instrutor,
   Veiculo,
   Aluno,
@@ -11,7 +12,8 @@ import type {
   Configuracao,
   Usuario,
   AuthResponse,
-  PerfilUsuario
+  PerfilUsuario,
+  ResumoSaaS
 } from '@shared/types'
 
 const api = {
@@ -131,7 +133,29 @@ const api = {
   atualizarUsuario: (id: number, dados: { nome?: string; usuario?: string; senha?: string; perfil?: PerfilUsuario; instrutor_id?: number | null; ativo?: number }): Promise<void> =>
     ipcRenderer.invoke('usuarios:update', id, dados),
   deletarUsuario: (id: number): Promise<void> =>
-    ipcRenderer.invoke('usuarios:delete', id)
+    ipcRenderer.invoke('usuarios:delete', id),
+
+  // ---- Master SaaS (Superadmin) ----
+  obterResumoSaaS: (): Promise<ResumoSaaS> =>
+    ipcRenderer.invoke('master:resumo'),
+  listarAutoescolas: (): Promise<Autoescola[]> =>
+    ipcRenderer.invoke('master:autoescolas:list'),
+  criarAutoescola: (dados: {
+    nome: string
+    responsavel?: string
+    telefone?: string
+    email?: string
+    status?: 'ativa' | 'bloqueada' | 'teste'
+    plano_valor?: number
+    data_vencimento?: string
+    pix_chave?: string
+    usuario_admin?: string
+    senha_admin?: string
+  }): Promise<Autoescola> => ipcRenderer.invoke('master:autoescolas:create', dados),
+  atualizarAutoescola: (id: number, dados: Partial<Autoescola>): Promise<void> =>
+    ipcRenderer.invoke('master:autoescolas:update', id, dados),
+  deletarAutoescola: (id: number): Promise<void> =>
+    ipcRenderer.invoke('master:autoescolas:delete', id)
 }
 
 contextBridge.exposeInMainWorld('api', api)

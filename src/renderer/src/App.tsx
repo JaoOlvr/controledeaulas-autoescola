@@ -9,6 +9,7 @@ import GastosPage from './pages/GastosPage'
 import InstrutoresPage from './pages/InstrutoresPage'
 import VeiculosPage from './pages/VeiculosPage'
 import ConfiguracoesPage from './pages/ConfiguracoesPage'
+import MasterAdminPage from './pages/MasterAdminPage'
 import { Loader2 } from 'lucide-react'
 
 function AppRoutes(): JSX.Element {
@@ -29,7 +30,7 @@ function AppRoutes(): JSX.Element {
       >
         <Loader2 size={36} className="spin" color="var(--primary)" />
         <span style={{ fontSize: 14, color: 'var(--gray-600)', fontWeight: 600 }}>
-          Carregando sistema...
+          Carregando plataforma...
         </span>
       </div>
     )
@@ -39,12 +40,14 @@ function AppRoutes(): JSX.Element {
     return <LoginPage />
   }
 
-  const isAdmin = usuario.perfil === 'admin'
+  const isSuperAdmin = usuario.perfil === 'superadmin'
+  const isAdmin = usuario.perfil === 'admin' || isSuperAdmin
 
   return (
     <Layout>
       <Routes>
-        <Route path="/" element={<CalendarioPage />} />
+        {isSuperAdmin && <Route path="/master" element={<MasterAdminPage />} />}
+        <Route path="/" element={<Navigate to={isSuperAdmin ? '/master' : '/calendario'} replace />} />
         <Route path="/calendario" element={<CalendarioPage />} />
         <Route path="/alunos" element={<AlunosPage />} />
         {isAdmin && (
@@ -56,7 +59,7 @@ function AppRoutes(): JSX.Element {
             <Route path="/configuracoes" element={<ConfiguracoesPage />} />
           </>
         )}
-        <Route path="*" element={<Navigate to="/calendario" replace />} />
+        <Route path="*" element={<Navigate to={isSuperAdmin ? '/master' : '/calendario'} replace />} />
       </Routes>
     </Layout>
   )

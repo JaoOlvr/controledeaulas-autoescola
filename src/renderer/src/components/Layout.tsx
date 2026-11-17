@@ -9,9 +9,11 @@ import {
   Car,
   Settings,
   LogOut,
-  UserCheck
+  UserCheck,
+  Crown
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import BloqueioPagamentoModal from './BloqueioPagamentoModal'
 
 interface LayoutProps {
   children: ReactNode
@@ -20,10 +22,12 @@ interface LayoutProps {
 function Layout({ children }: LayoutProps): JSX.Element {
   const { usuario, logout } = useAuth()
 
+  const isSuperAdmin = usuario?.perfil === 'superadmin'
   const isAdmin = usuario?.perfil === 'admin'
 
-  const navItems = isAdmin
+  const navItems = isSuperAdmin
     ? [
+        { to: '/master', label: 'Painel SaaS Master', icon: Crown },
         { to: '/calendario', label: 'Calendário', icon: CalendarDays },
         { to: '/alunos', label: 'Alunos', icon: Users },
         { to: '/lucros', label: 'Lucros', icon: TrendingUp },
@@ -32,17 +36,52 @@ function Layout({ children }: LayoutProps): JSX.Element {
         { to: '/veiculos', label: 'Veículos', icon: Car },
         { to: '/configuracoes', label: 'Configurações', icon: Settings }
       ]
-    : [
-        { to: '/calendario', label: 'Minha Agenda', icon: CalendarDays },
-        { to: '/alunos', label: 'Lista de Alunos', icon: Users }
-      ]
+    : isAdmin
+      ? [
+          { to: '/calendario', label: 'Calendário', icon: CalendarDays },
+          { to: '/alunos', label: 'Alunos', icon: Users },
+          { to: '/lucros', label: 'Lucros', icon: TrendingUp },
+          { to: '/gastos', label: 'Gastos', icon: Fuel },
+          { to: '/instrutores', label: 'Instrutores', icon: UserCog },
+          { to: '/veiculos', label: 'Veículos', icon: Car },
+          { to: '/configuracoes', label: 'Configurações', icon: Settings }
+        ]
+      : [
+          { to: '/calendario', label: 'Minha Agenda', icon: CalendarDays },
+          { to: '/alunos', label: 'Lista de Alunos', icon: Users }
+        ]
+
+  function getPerfilBadge(): { label: string; bg: string; color: string } {
+    if (isSuperAdmin) {
+      return { label: '👑 Master SaaS', bg: 'rgba(234, 179, 8, 0.25)', color: '#fef08a' }
+    }
+    if (isAdmin) {
+      return { label: 'Administrador', bg: 'rgba(79, 70, 229, 0.3)', color: '#c7d2fe' }
+    }
+    return { label: 'Instrutor', bg: 'rgba(16, 185, 129, 0.3)', color: '#a7f3d0' }
+  }
+
+  const badge = getPerfilBadge()
 
   return (
     <div className="app-layout">
+      {usuario && <BloqueioPagamentoModal usuario={usuario} />}
+
       <aside className="sidebar">
         <div className="sidebar-header">
-          <h1>🚗 Agenda</h1>
-          <p>{isAdmin ? 'Gestão da Autoescola' : 'Portal do Instrutor'}</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 24 }}>🚗</span>
+            <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#ffffff' }}>
+              {isSuperAdmin ? 'Plataforma SaaS' : usuario?.autoescola_nome || 'Agenda Autoescola'}
+            </h1>
+          </div>
+          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'rgba(255, 255, 255, 0.6)' }}>
+            {isSuperAdmin
+              ? 'Gestão Central de Autoescolas'
+              : isAdmin
+                ? 'Painel da Autoescola'
+                : 'Portal do Instrutor'}
+          </p>
         </div>
 
         <nav className="sidebar-nav">
@@ -77,7 +116,7 @@ function Layout({ children }: LayoutProps): JSX.Element {
                 width: 34,
                 height: 34,
                 borderRadius: '50%',
-                background: isAdmin ? 'var(--primary)' : '#059669',
+                background: isSuperAdmin ? '#eab308' : isAdmin ? 'var(--primary)' : '#059669',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -107,11 +146,11 @@ function Layout({ children }: LayoutProps): JSX.Element {
                   fontWeight: 700,
                   padding: '1px 6px',
                   borderRadius: 4,
-                  background: isAdmin ? 'rgba(79, 70, 229, 0.3)' : 'rgba(16, 185, 129, 0.3)',
-                  color: isAdmin ? '#c7d2fe' : '#a7f3d0'
+                  background: badge.bg,
+                  color: badge.color
                 }}
               >
-                {isAdmin ? 'Administrador' : 'Instrutor'}
+                {badge.label}
               </span>
             </div>
           </div>

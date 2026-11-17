@@ -1,5 +1,10 @@
 import { ipcMain, Notification } from 'electron'
 import {
+  listAutoescolas,
+  createAutoescola,
+  updateAutoescola,
+  deleteAutoescola,
+  obterResumoSaaS,
   listInstrutores,
   createInstrutor,
   updateInstrutor,
@@ -43,51 +48,51 @@ import { getServerInfo } from './server'
 
 export function registerIpcHandlers(): void {
   // ---- Instrutores ----
-  ipcMain.handle('instrutores:list', (_e, filtro) => listInstrutores(filtro))
-  ipcMain.handle('instrutores:create', (_e, instrutor) => createInstrutor(instrutor))
-  ipcMain.handle('instrutores:update', (_e, id, instrutor) => updateInstrutor(id, instrutor))
-  ipcMain.handle('instrutores:delete', (_e, id) => deleteInstrutor(id))
+  ipcMain.handle('instrutores:list', (_e, filtro) => listInstrutores(1, filtro))
+  ipcMain.handle('instrutores:create', (_e, instrutor) => createInstrutor(1, instrutor))
+  ipcMain.handle('instrutores:update', (_e, id, instrutor) => updateInstrutor(1, id, instrutor))
+  ipcMain.handle('instrutores:delete', (_e, id) => deleteInstrutor(1, id))
 
   // ---- Veículos ----
-  ipcMain.handle('veiculos:list', (_e, filtro) => listVeiculos(filtro))
-  ipcMain.handle('veiculos:create', (_e, veiculo) => createVeiculo(veiculo))
-  ipcMain.handle('veiculos:update', (_e, id, veiculo) => updateVeiculo(id, veiculo))
-  ipcMain.handle('veiculos:delete', (_e, id) => deleteVeiculo(id))
+  ipcMain.handle('veiculos:list', (_e, filtro) => listVeiculos(1, filtro))
+  ipcMain.handle('veiculos:create', (_e, veiculo) => createVeiculo(1, veiculo))
+  ipcMain.handle('veiculos:update', (_e, id, veiculo) => updateVeiculo(1, id, veiculo))
+  ipcMain.handle('veiculos:delete', (_e, id) => deleteVeiculo(1, id))
 
   // ---- Alunos ----
-  ipcMain.handle('alunos:list', (_e, filtro) => listAlunos(filtro))
-  ipcMain.handle('alunos:create', (_e, aluno) => createAluno(aluno))
-  ipcMain.handle('alunos:get', (_e, id) => getAluno(id))
-  ipcMain.handle('alunos:update', (_e, id, aluno) => updateAluno(id, aluno))
-  ipcMain.handle('alunos:delete', (_e, id) => deleteAluno(id))
+  ipcMain.handle('alunos:list', (_e, filtro) => listAlunos(1, filtro))
+  ipcMain.handle('alunos:create', (_e, aluno) => createAluno(1, aluno))
+  ipcMain.handle('alunos:get', (_e, id) => getAluno(1, id))
+  ipcMain.handle('alunos:update', (_e, id, aluno) => updateAluno(1, id, aluno))
+  ipcMain.handle('alunos:delete', (_e, id) => deleteAluno(1, id))
 
   // ---- Pagamentos ----
-  ipcMain.handle('pagamentos:create', (_e, pagamento) => registrarPagamento(pagamento))
-  ipcMain.handle('pagamentos:list', (_e, filtro) => listPagamentos(filtro))
+  ipcMain.handle('pagamentos:create', (_e, pagamento) => registrarPagamento(1, pagamento))
+  ipcMain.handle('pagamentos:list', (_e, filtro) => listPagamentos(1, filtro))
 
   // ---- Aulas ----
-  ipcMain.handle('aulas:list', (_e, filtro) => listAulas(filtro))
-  ipcMain.handle('aulas:create', (_e, aula) => createAula(aula))
-  ipcMain.handle('aulas:update', (_e, id, aula) => updateAula(id, aula))
-  ipcMain.handle('aulas:delete', (_e, id) => deleteAula(id))
+  ipcMain.handle('aulas:list', (_e, filtro) => listAulas(1, filtro))
+  ipcMain.handle('aulas:create', (_e, aula) => createAula(1, aula))
+  ipcMain.handle('aulas:update', (_e, id, aula) => updateAula(1, id, aula))
+  ipcMain.handle('aulas:delete', (_e, id) => deleteAula(1, id))
 
   // ---- Gastos ----
-  ipcMain.handle('gastos:list', (_e, filtro) => listGastos(filtro))
-  ipcMain.handle('gastos:create', (_e, gasto) => createGasto(gasto))
-  ipcMain.handle('gastos:update', (_e, id, gasto) => updateGasto(id, gasto))
-  ipcMain.handle('gastos:delete', (_e, id) => deleteGasto(id))
-  ipcMain.handle('gastos:totalPeriodo', (_e, inicio, fim) => totalGastosPeriodo(inicio, fim))
+  ipcMain.handle('gastos:list', (_e, filtro) => listGastos(1, filtro))
+  ipcMain.handle('gastos:create', (_e, gasto) => createGasto(1, gasto))
+  ipcMain.handle('gastos:update', (_e, id, gasto) => updateGasto(1, id, gasto))
+  ipcMain.handle('gastos:delete', (_e, id) => deleteGasto(1, id))
+  ipcMain.handle('gastos:totalPeriodo', (_e, inicio, fim) => totalGastosPeriodo(1, inicio, fim))
 
   // ---- Relatórios ----
-  ipcMain.handle('financeiro:resumo', (_e, inicio, fim) => resumoFinanceiro(inicio, fim))
+  ipcMain.handle('financeiro:resumo', (_e, inicio, fim) => resumoFinanceiro(1, inicio, fim))
 
   // ---- Horários ----
-  ipcMain.handle('horarios:list', () => listHorarios())
-  ipcMain.handle('horarios:update', (_e, id, horario) => updateHorario(id, horario))
+  ipcMain.handle('horarios:list', () => listHorarios(1))
+  ipcMain.handle('horarios:update', (_e, id, horario) => updateHorario(1, id, horario))
 
   // ---- Configurações ----
-  ipcMain.handle('config:get', () => getConfiguracoes())
-  ipcMain.handle('config:update', (_e, config) => updateConfiguracoes(config))
+  ipcMain.handle('config:get', () => getConfiguracoes(1))
+  ipcMain.handle('config:update', (_e, config) => updateConfiguracoes(1, config))
 
   // ---- Backup ----
   ipcMain.handle('backup:make', () => makeBackup())
@@ -113,8 +118,15 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('auth:alterarSenha', (_e, { usuarioId, senhaAtual, novaSenha }) =>
     alterarMinhaSenha(usuarioId, senhaAtual, novaSenha)
   )
-  ipcMain.handle('usuarios:list', () => listUsuarios())
-  ipcMain.handle('usuarios:create', (_e, dados) => createUsuario(dados))
+  ipcMain.handle('usuarios:list', () => listUsuarios(1))
+  ipcMain.handle('usuarios:create', (_e, dados) => createUsuario({ ...dados, autoescola_id: 1 }))
   ipcMain.handle('usuarios:update', (_e, id, dados) => updateUsuario(id, dados))
   ipcMain.handle('usuarios:delete', (_e, id) => deleteUsuario(id))
+
+  // ---- Master SaaS ----
+  ipcMain.handle('master:resumo', () => obterResumoSaaS())
+  ipcMain.handle('master:autoescolas:list', () => listAutoescolas())
+  ipcMain.handle('master:autoescolas:create', (_e, dados) => createAutoescola(dados))
+  ipcMain.handle('master:autoescolas:update', (_e, id, dados) => updateAutoescola(id, dados))
+  ipcMain.handle('master:autoescolas:delete', (_e, id) => deleteAutoescola(id))
 }

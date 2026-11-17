@@ -1,10 +1,9 @@
 import { app, shell, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import { initDatabase } from './database'
+import { initDatabase, getConfiguracoes } from './database'
 import { registerIpcHandlers } from './ipc'
 import { makeBackup } from './backup'
-import { getConfiguracoes } from './database'
 import { startHttpServer, stopHttpServer } from './server'
 
 function createWindow(): void {
@@ -39,38 +38,42 @@ function createWindow(): void {
   }
 }
 
-function setupBackupAutomation(): void {
-  const config = getConfiguracoes()
-  if (!config.backup_automatico) return
+async function setupBackupAutomation(): Promise<void> {
+  try {
+    const config = await getConfiguracoes(1)
+    if (!config.backup_automatico) return
 
-  const intervaloDias = config.backup_intervalo_dias || 7
-  const intervalo = intervaloDias * 24 * 60 * 60 * 1000
+    const intervaloDias = config.backup_intervalo_dias || 7
+    const intervalo = intervaloDias * 24 * 60 * 60 * 1000
 
-  setTimeout(() => {
-    try {
-      makeBackup()
-    } catch (err) {
-      console.error('Erro ao fazer backup automático:', err)
-    }
-  }, 60 * 1000)
+    setTimeout(() => {
+      try {
+        makeBackup()
+      } catch (err) {
+        console.error('Erro ao fazer backup automático:', err)
+      }
+    }, 60 * 1000)
 
-  setInterval(() => {
-    try {
-      makeBackup()
-    } catch (err) {
-      console.error('Erro ao fazer backup automático:', err)
-    }
-  }, intervalo)
+    setInterval(() => {
+      try {
+        makeBackup()
+      } catch (err) {
+        console.error('Erro ao fazer backup automático:', err)
+      }
+    }, intervalo)
+  } catch (err) {
+    console.error('Erro na automação de backup:', err)
+  }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.agendaaulas.app')
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  initDatabase()
+  await initDatabase()
   registerIpcHandlers()
   startHttpServer().catch((err) => console.error('Erro ao iniciar servidor HTTP:', err))
   createWindow()
