@@ -72,29 +72,61 @@ function ConfiguracoesPage(): JSX.Element {
   })
 
   const loadDados = useCallback(async () => {
-    const [cfg, hrs, bks, usrs, insts] = await Promise.all([
-      window.api.obterConfiguracoes(),
-      window.api.listarHorarios(),
-      window.api.listarBackups(),
-      window.api.listarUsuarios ? window.api.listarUsuarios() : Promise.resolve([]),
-      window.api.listarInstrutores ? window.api.listarInstrutores({ status: 'ativo' }) : Promise.resolve([])
-    ])
-    setConfig(cfg)
-    setHorarios(hrs)
-    setBackups(bks)
-    setUsuarios(usrs)
-    setInstrutores(insts)
+    try {
+      const [cfg, hrs, bks, usrs, insts] = await Promise.all([
+        window.api.obterConfiguracoes().catch((err) => {
+          console.warn('Erro ao obter configuracoes:', err)
+          return {
+            nome_autoescola: usuarioLogado?.autoescola_nome || 'Autoescola',
+            horario_padrao_inicio: '08:00',
+            duracao_padrao_minutos: 50,
+            backup_automatico: false,
+            backup_intervalo_dias: 7,
+            ultimo_backup: null,
+            modo_agenda: 'grade' as const,
+            grade_horarios_manha: '08:00, 08:50, 09:40, 10:30, 11:20',
+            grade_horarios_tarde: '14:00, 14:50, 15:40, 16:30, 17:20'
+          }
+        }),
+        window.api.listarHorarios().catch((err) => {
+          console.warn('Erro ao listar horarios:', err)
+          return []
+        }),
+        window.api.listarBackups().catch(() => []),
+        window.api.listarUsuarios ? window.api.listarUsuarios().catch(() => []) : Promise.resolve([]),
+        window.api.listarInstrutores ? window.api.listarInstrutores({ status: 'ativo' }).catch(() => []) : Promise.resolve([])
+      ])
 
-    if (window.api.obterInfoServidor) {
-      try {
-        const sInfo = await window.api.obterInfoServidor()
-        setServerInfo(sInfo)
-        setIpSelecionado(sInfo.ip)
-      } catch (e) {
-        console.warn('Erro ao obter dados do servidor:', e)
+      setConfig(cfg)
+      setHorarios(hrs)
+      setBackups(bks)
+      setUsuarios(usrs)
+      setInstrutores(insts)
+
+      if (window.api.obterInfoServidor) {
+        try {
+          const sInfo = await window.api.obterInfoServidor()
+          setServerInfo(sInfo)
+          setIpSelecionado(sInfo.ip)
+        } catch (e) {
+          console.warn('Erro ao obter dados do servidor:', e)
+        }
       }
+    } catch (err) {
+      console.error('Erro geral ao carregar configuracoes:', err)
+      setConfig({
+        nome_autoescola: usuarioLogado?.autoescola_nome || 'Autoescola',
+        horario_padrao_inicio: '08:00',
+        duracao_padrao_minutos: 50,
+        backup_automatico: false,
+        backup_intervalo_dias: 7,
+        ultimo_backup: null,
+        modo_agenda: 'grade',
+        grade_horarios_manha: '08:00, 08:50, 09:40, 10:30, 11:20',
+        grade_horarios_tarde: '14:00, 14:50, 15:40, 16:30, 17:20'
+      })
     }
-  }, [])
+  }, [usuarioLogado])
 
   useEffect(() => {
     loadDados()
@@ -250,7 +282,17 @@ function ConfiguracoesPage(): JSX.Element {
     }
   }
 
-  const urlConexao = serverInfo ? `http://${ipSelecionado || serverInfo.ip}:${serverInfo.port}` : ''
+  const isCloudWeb =
+    typeof window !== 'undefined' &&
+    window.location.hostname !== 'localhost' &&
+    window.location.hostname !== '127.0.0.1'
+  const urlConexao = isCloudWeb
+    ? window.location.origin
+    : serverInfo
+      ? `http://${ipSelecionado || serverInfo.ip}:${serverInfo.port}`
+      : typeof window !== 'undefined'
+        ? window.location.origin
+        : ''
 
   if (!config) {
     return <div className="empty-state">Carregando...</div>

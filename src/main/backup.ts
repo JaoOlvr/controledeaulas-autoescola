@@ -1,44 +1,67 @@
 import { copyFileSync, mkdirSync, readdirSync, existsSync, statSync } from 'fs'
 import { join } from 'path'
+import os from 'os'
 import { getUserDataPath } from './database'
 
 function getDataDir(): string {
-  return join(getUserDataPath(), 'data')
+  try {
+    return join(getUserDataPath(), 'data')
+  } catch {
+    return join(os.tmpdir(), 'data')
+  }
 }
 
 function getBackupDir(): string {
-  const dir = join(getUserDataPath(), 'backups')
-  mkdirSync(dir, { recursive: true })
-  return dir
+  try {
+    const dir = join(getUserDataPath(), 'backups')
+    mkdirSync(dir, { recursive: true })
+    return dir
+  } catch {
+    try {
+      const tmpDir = join(os.tmpdir(), 'agenda-backups')
+      mkdirSync(tmpDir, { recursive: true })
+      return tmpDir
+    } catch {
+      return os.tmpdir()
+    }
+  }
 }
 
 export function makeBackup(): string {
-  const backupDir = getBackupDir()
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const backupFile = join(backupDir, `backup-${timestamp}.db`)
+  try {
+    const backupDir = getBackupDir()
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const backupFile = join(backupDir, `backup-${timestamp}.db`)
 
-  const srcDb = join(getDataDir(), 'agenda.db')
-  if (existsSync(srcDb)) {
-    copyFileSync(srcDb, backupFile)
+    const srcDb = join(getDataDir(), 'agenda.db')
+    if (existsSync(srcDb)) {
+      copyFileSync(srcDb, backupFile)
+    }
+
+    cleanupOldBackups(backupDir)
+    return backupFile
+  } catch (err: any) {
+    console.warn('Backup local ignorado em ambiente sem escrita local:', err)
+    return 'backup-nuvem-turso'
   }
-
-  cleanupOldBackups(backupDir)
-  return backupFile
 }
 
 function cleanupOldBackups(dir: string, keep = 20): void {
-  const files = readdirSync(dir)
-    .filter((f) => f.startsWith('backup-') && f.endsWith('.db'))
-    .map((f) => ({
-      name: f,
-      time: statSync(join(dir, f)).mtime.getTime()
-    }))
-    .sort((a, b) => b.time - a.time)
+  try {
+    if (!existsSync(dir)) return
+    const files = readdirSync(dir)
+      .filter((f) => f.startsWith('backup-') && f.endsWith('.db'))
+      .map((f) => ({
+        name: f,
+        time: statSync(join(dir, f)).mtime.getTime()
+      }))
+      .sort((a, b) => b.time - a.time)
 
-  for (const file of files.slice(keep)) {
-    const { unlinkSync } = require('fs')
-    unlinkSync(join(dir, file.name))
-  }
+    for (const file of files.slice(keep)) {
+      const { unlinkSync } = require('fs')
+      unlinkSync(join(dir, file.name))
+    }
+  } catch {}
 }
 
 export async function backupToLocation(): Promise<string | null> {
@@ -64,20 +87,24 @@ export async function backupToLocation(): Promise<string | null> {
 }
 
 export function listBackups(): { arquivo: string; tamanho: number; data: string }[] {
-  const dir = getBackupDir()
-  if (!existsSync(dir)) return []
+  try {
+    const dir = getBackupDir()
+    if (!existsSync(dir)) return []
 
-  return readdirSync(dir)
-    .filter((f) => f.endsWith('.db'))
-    .map((f) => {
-      const stats = statSync(join(dir, f))
-      return {
-        arquivo: f,
-        tamanho: stats.size,
-        data: stats.mtime.toISOString()
-      }
-    })
-    .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
+    return readdirSync(dir)
+      .filter((f) => f.endsWith('.db'))
+      .map((f) => {
+        const stats = statSync(join(dir, f))
+        return {
+          arquivo: f,
+          tamanho: stats.size,
+          data: stats.mtime.toISOString()
+        }
+      })
+      .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
+  } catch {
+    return []
+  }
 }
 
 export function exportAsJson(filePath: string): void | never {

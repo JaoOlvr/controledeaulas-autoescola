@@ -255,6 +255,29 @@ async function migrateSchema(): Promise<void> {
     } catch {}
   }
 
+  // Migração segura para a tabela configuracoes (suporta multi-tenant por autoescola_id)
+  try {
+    const resCfg = await client.execute('PRAGMA table_info(configuracoes)')
+    const colsCfg = resCfg.rows as unknown as { name: string }[]
+    const hasAutoescolaId = colsCfg.some((c) => c.name === 'autoescola_id')
+    if (!hasAutoescolaId) {
+      await client.executeMultiple(`
+        CREATE TABLE IF NOT EXISTS configuracoes_new (
+          autoescola_id INTEGER NOT NULL DEFAULT 1,
+          chave TEXT NOT NULL,
+          valor TEXT NOT NULL,
+          PRIMARY KEY (autoescola_id, chave)
+        );
+        INSERT OR IGNORE INTO configuracoes_new (autoescola_id, chave, valor)
+        SELECT 1, chave, valor FROM configuracoes;
+        DROP TABLE configuracoes;
+        ALTER TABLE configuracoes_new RENAME TO configuracoes;
+      `)
+    }
+  } catch (err) {
+    console.error('Erro na migração de configuracoes:', err)
+  }
+
   // Verifica veiculo_id em aulas
   try {
     const resAulas = await client.execute('PRAGMA table_info(aulas)')
@@ -1216,27 +1239,52 @@ export async function updateHorario(
 // ==========================================
 
 export async function getConfiguracoes(autoescolaId: number): Promise<Configuracao> {
-  const rows = await query<{ chave: string; valor: string }>(
-    'SELECT chave, valor FROM configuracoes WHERE autoescola_id = ?',
-    [autoescolaId]
-  )
-  const config: Record<string, string> = {}
-  for (const r of rows) {
-    config[r.chave] = r.valor
-  }
-  return {
-    autoescola_id: autoescolaId,
-    nome_autoescola: config['nome_autoescola'] ?? 'Autoescola',
-    horario_padrao_inicio: config['horario_padrao_inicio'] ?? '08:00',
-    duracao_padrao_minutos: Number(config['duracao_padrao_minutos'] ?? 50),
-    backup_automatico: config['backup_automatico'] === 'true',
-    backup_intervalo_dias: Number(config['backup_intervalo_dias'] ?? 7),
-    ultimo_backup: config['ultimo_backup'] ?? null,
-    modo_agenda: (config['modo_agenda'] as 'grade' | 'calendario') ?? 'grade',
-    grade_horarios_manha:
-      config['grade_horarios_manha'] ?? '08:00, 08:50, 09:40, 10:30, 11:20',
-    grade_horarios_tarde:
-      config['grade_horarios_tarde'] ?? '14:00, 14:50, 15:40, 16:30, 17:20'
+  try {
+    const rows = await query<{ chave: string; valor: string }>(
+      'SELECT chave, valor FROM configuracoes WHERE autoescola_id = ?',
+      [autoescolaId]
+    )
+    const config: Record<string, string> = {}
+    for (const r of rows) {
+      config[r.chave] = r.valor
+    }
+
+    let nomeAutoescola = config['nome_autoescola']
+    if (!nomeAutoescola) {
+      const ae = await queryOne<{ nome: string }>('SELECT nome FROM autoescolas WHERE id = ?', [
+        autoescolaId
+      ])
+      nomeAutoescola = ae?.nome || 'Autoescola'
+    }
+
+    return {
+      autoescola_id: autoescolaId,
+      nome_autoescola: nomeAutoescola,
+      horario_padrao_inicio: config['horario_padrao_inicio'] ?? '08:00',
+      duracao_padrao_minutos: Number(config['duracao_padrao_minutos'] ?? 50),
+      backup_automatico: config['backup_automatico'] === 'true',
+      backup_intervalo_dias: Number(config['backup_intervalo_dias'] ?? 7),
+      ultimo_backup: config['ultimo_backup'] ?? null,
+      modo_agenda: (config['modo_agenda'] as 'grade' | 'calendario') ?? 'grade',
+      grade_horarios_manha:
+        config['grade_horarios_manha'] ?? '08:00, 08:50, 09:40, 10:30, 11:20',
+      grade_horarios_tarde:
+        config['grade_horarios_tarde'] ?? '14:00, 14:50, 15:40, 16:30, 17:20'
+    }
+  } catch (err) {
+    console.error('Erro em getConfiguracoes:', err)
+    return {
+      autoescola_id: autoescolaId,
+      nome_autoescola: 'Autoescola',
+      horario_padrao_inicio: '08:00',
+      duracao_padrao_minutos: 50,
+      backup_automatico: false,
+      backup_intervalo_dias: 7,
+      ultimo_backup: null,
+      modo_agenda: 'grade',
+      grade_horarios_manha: '08:00, 08:50, 09:40, 10:30, 11:20',
+      grade_horarios_tarde: '14:00, 14:50, 15:40, 16:30, 17:20'
+    }
   }
 }
 
@@ -1245,13 +1293,33 @@ export async function updateConfiguracoes(
   config: Partial<Configuracao>
 ): Promise<void> {
   const set = async (chave: string, valor: string) => {
-    await execute(
-      'INSERT INTO configuracoes (autoescola_id, chave, valor) VALUES (?, ?, ?) ON CONFLICT(autoescola_id, chave) DO UPDATE SET valor = excluded.valor',
-      [autoescolaId, chave, valor]
-    )
+    try {
+      await execute(
+        'INSERT INTO configuracoes (autoescola_id, chave, valor) VALUES (?, ?, ?) ON CONFLICT(autoescola_id, chave) DO UPDATE SET valor = excluded.valor',
+        [autoescolaId, chave, valor]
+      )
+    } catch {
+      await execute('DELETE FROM configuracoes WHERE autoescola_id = ? AND chave = ?', [
+        autoescolaId,
+        chave
+      ])
+      await execute('INSERT INTO configuracoes (autoescola_id, chave, valor) VALUES (?, ?, ?)', [
+        autoescolaId,
+        chave,
+        valor
+      ])
+    }
   }
 
-  if (config.nome_autoescola !== undefined) await set('nome_autoescola', config.nome_autoescola)
+  if (config.nome_autoescola !== undefined) {
+    await set('nome_autoescola', config.nome_autoescola)
+    try {
+      await execute('UPDATE autoescolas SET nome = ? WHERE id = ?', [
+        config.nome_autoescola,
+        autoescolaId
+      ])
+    } catch {}
+  }
   if (config.horario_padrao_inicio !== undefined)
     await set('horario_padrao_inicio', config.horario_padrao_inicio)
   if (config.duracao_padrao_minutos !== undefined)
